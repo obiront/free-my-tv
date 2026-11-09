@@ -61,6 +61,19 @@ public class HomeActivity extends Activity {
         Updates.tellOnce(this);   // an update the week's check got ready: said once
     }
 
+    /** Local build: started and not stopped (e.g. under the screensaver): the Mi button then needn't open it again. */
+    static volatile boolean shown;
+
+    @Override protected void onStart() {
+        super.onStart();
+        shown = true;
+    }
+
+    @Override protected void onStop() {
+        shown = false;
+        super.onStop();
+    }
+
     @Override protected void onPause() {
         if (home != null) home.pause();
         super.onPause();

@@ -110,7 +110,15 @@ final class RemoteKeys {
                     : launchIntent(c.getPackageManager(), pkg);
             if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
             AppLog.w("remote key " + e.getKeyCode() + " -> " + pkg + (intent == null ? " (not installed)" : ""));
-            if (intent != null) c.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            if (intent == null) return true;
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (pkg.equals(HomeMode.PKG)) {
+                // Local build: over the screensaver, the Mi button lets it fade out first (it then opens home).
+                final Intent home = intent;
+                Screensaver.leaveOr(c, () -> c.startActivity(home));
+            } else {
+                c.startActivity(intent);
+            }
         }
         return true;
     }

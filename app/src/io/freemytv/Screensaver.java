@@ -1,5 +1,9 @@
 package io.freemytv;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.service.dreams.DreamService;
 import android.view.KeyEvent;
 
@@ -27,6 +31,42 @@ public class Screensaver extends DreamService {
     private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
     private boolean closing;
 
+    /** Local build: the Mi button (RemoteKeys, in the :keys process) asks a running screensaver to close gently. */
+    private static final String ACTION_LEAVE = "io.freemytv.LEAVE_SCREENSAVER";
+
+    /** If the screensaver is on, it fades out and opens the home screen; otherwise `otherwise` runs (on the main thread). */
+    static void leaveOr(Context c, Runnable otherwise) {
+        Intent ask = new Intent(ACTION_LEAVE).setPackage(c.getPackageName());
+        c.sendOrderedBroadcast(ask, null, new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (getResultCode() != 1) otherwise.run();
+            }
+        }, null, 0, null, null);
+    }
+
+    private final BroadcastReceiver leave = new BroadcastReceiver() {
+        @Override public void onReceive(Context context, Intent intent) {
+            setResultCode(1);
+            if (closing) return;
+            closing = true;
+            if (view != null) view.leave();
+            handler.postDelayed(() -> {
+                // Over the home screen, closing is enough (opening it again would reset and slide its focus);
+                // over another app, the home screen opens, as the Mi button does.
+                if (!HomeActivity.shown) {
+                    try {
+                        startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } catch (RuntimeException e) {
+                        AppLog.w("screensaver: couldn't open home: " + e.getMessage());
+                    }
+                }
+                finish();
+            }, DreamView.LEAVE_MS);
+        }
+    };
+    private boolean listening;
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
         boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
@@ -48,14 +88,29 @@ public class Screensaver extends DreamService {
     @Override public void onDreamingStarted() {
         super.onDreamingStarted();
         if (view != null) view.start();
+        if (!listening) {
+            registerReceiver(leave, new IntentFilter(ACTION_LEAVE));
+            listening = true;
+        }
     }
 
     @Override public void onDreamingStopped() {
+        stopListening();
         if (view != null) view.stop();
         super.onDreamingStopped();
     }
 
+    private void stopListening() {
+        if (!listening) return;
+        listening = false;
+        try {
+            unregisterReceiver(leave);
+        } catch (IllegalArgumentException ignored) {
+        }
+    }
+
     @Override public void onDetachedFromWindow() {
+        stopListening();
         if (view != null) view.stop();
         super.onDetachedFromWindow();
     }
