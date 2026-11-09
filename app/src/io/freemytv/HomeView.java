@@ -92,6 +92,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final int SMOKE = 0xFF111113, INK = 0xFF1C1C1E, WHITE = 0xFFF5F5F7;
     private static final int UP_COLOR = 0xFF30D158, DOWN_COLOR = 0xFFFF453A;
     private static final long TOAST_MS = 6000, FADE_MS = 800;
+    /** Local build: after the screensaver, the interface fades in over the photo already there. */
+    private static final long WAKE_MS = 400;
+    private static java.lang.ref.WeakReference<HomeView> live = new java.lang.ref.WeakReference<>(null);
+    private long wakeAt;
+
+    /** Local build: called on the main thread by the screensaver (same :home process); the fade starts at `at`. */
+    static void afterScreensaver(long at) {
+        HomeView v = live.get();
+        if (v == null) return;
+        v.wakeAt = at;
+        v.updateMotion();   // hidden right away, before the screensaver's window goes
+        v.wake();
+    }
     /** Blur radii of the shadow and shadowDeep paints (Shadows needs them to draw the same blur on older TVs). */
     private static final float SHADOW_BLUR = 26, DEEP_BLUR = 30;
     private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7, MENU = 8;
@@ -436,6 +449,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             AppLog.w("no app-change callback: " + e.getMessage());
         }
         setFocusable(true);
+        live = new java.lang.ref.WeakReference<>(this);
         sky = new Layer(a, SKY);
         heroLayer = new Layer(a, HERO);
         status = new Layer(a, STATUS);
@@ -816,7 +830,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (menuMoving || nightMoving && menuOpen) menuLayer.invalidate();
         else if (!menuOpen && menuLayer.getVisibility() == VISIBLE) menuLayer.setVisibility(INVISIBLE);
 
-        if (drawerMoving || sheetMoving || motionDirty) updateMotion();
+        boolean waking = wakeAt != 0;
+        if (drawerMoving || sheetMoving || motionDirty || waking) updateMotion();
         // Opening and closing the drawer only moves the cached layers: redrawing the glass on every frame made the TV
         // drop frames (measured: ~50 ms of GPU per frame). The app tiles have no glass; the top buttons fade out as
         // they rise; the drawer is drawn resting in place; the glass shelf is redrawn once the drawer stops, so the
@@ -842,7 +857,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
         // Busy: something is moving, or the sheet or the drawer is open.
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving
-                || menuMoving || sheetMoving || toastFading || heroFading || bgFading || nightMoving || tintMoving || sheetOpen
+                || menuMoving || sheetMoving || waking || toastFading || heroFading || bgFading || nightMoving || tintMoving || sheetOpen
                 || sheet.value > 0.001f || drawerOpen || drawer.value > 0.001f || toast != null || !toasts.isEmpty();
         idle = !busy;
         if (busy) Choreographer.getInstance().postFrameCallback(this);
@@ -866,7 +881,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Drawer and sheet: the layers' positions and opacity (without redrawing their content). */
     private void updateMotion() {
         float d = drawer.value, dc = Ui.clamp(d), s = Ui.clamp(sheet.value);
-        float home = 1 - s, top = home * (1 - smoothstep(0, 0.32f, dc));
+        float w = 1;
+        if (wakeAt != 0) {
+            w = fadeEase(wakeAt, SystemClock.uptimeMillis(), WAKE_MS);
+            if (SystemClock.uptimeMillis() >= wakeAt + WAKE_MS) wakeAt = 0;
+        }
+        float home = (1 - s) * w, top = home * (1 - smoothstep(0, 0.32f, dc));
         float shift = SHIFT * k;
         float lift = -d * shift;
         show(heroLayer, top, lift);

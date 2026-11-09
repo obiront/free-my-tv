@@ -201,7 +201,23 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         invalidate();
     }
 
+    /** Local build: how long the clock and weather take to fade out when a key closes the screensaver. */
+    static final long LEAVE_MS = 300;
+    private long leavingAt;
+
+    /** Local build: a key was pressed; the clock and weather fade out (the photo stays), then the screensaver closes. */
+    void leave() {
+        if (leavingAt != 0) return;
+        leavingAt = clock();
+        moving = true;
+        lastFrame = 0;
+        invalidate();
+    }
+
     void stop() {
+        // Local build: the home screen under it fades its interface in (also when the system closed it, e.g. Home).
+        HomeView.afterScreensaver(leavingAt != 0 ? leavingAt + LEAVE_MS : SystemClock.uptimeMillis());
+        leavingAt = 0;
         if (!running) return;
         running = false;
         generation++;
@@ -508,6 +524,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         }
 
         if (chromeDirty) recordChrome();
+        float out = leavingAt == 0 ? 1 : 1 - fadeIn(up - leavingAt, LEAVE_MS);
+        if (leavingAt != 0) moving = true;
+        first *= out;
         chrome.setAlpha(first);
         chrome.draw(canvas);
         if (playingCorner != null) {

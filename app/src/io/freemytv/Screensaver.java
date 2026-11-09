@@ -16,21 +16,31 @@ public class Screensaver extends DreamService {
         super.onAttachedToWindow();
         Watchdog.install(this);
         Ui.init(this);
-        setInteractive(Prefs.saverWatch());   // interactive: the keys come here instead of waking the TV
+        // Local build: always interactive, so a key first fades the clock out (DreamView.leave), then closes.
+        setInteractive(true);
         setFullscreen(true);
         setScreenBright(true);
         view = new DreamView(this);
         setContentView(view);
     }
 
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private boolean closing;
+
     @Override public boolean dispatchKeyEvent(KeyEvent event) {
-        if (!isInteractive()) return super.dispatchKeyEvent(event);
         int code = event.getKeyCode();
         boolean ok = code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
-        // OK acts when it's released, so the app it opens doesn't get the release; any other key closes at once.
-        if (ok ? event.getAction() == KeyEvent.ACTION_UP : event.getAction() == KeyEvent.ACTION_DOWN) {
-            if (ok && view != null) view.watch();
-            finish();
+        // OK acts when it's released, so the app it opens doesn't get the release; any other key closes.
+        if (!closing && (ok ? event.getAction() == KeyEvent.ACTION_UP : event.getAction() == KeyEvent.ACTION_DOWN)) {
+            closing = true;
+            if (ok && Prefs.saverWatch() && view != null && view.watch()) {
+                finish();   // a title opens in its app: no fade
+            } else if (view != null) {
+                view.leave();
+                handler.postDelayed(this::finish, DreamView.LEAVE_MS);
+            } else {
+                finish();
+            }
         }
         return true;
     }
