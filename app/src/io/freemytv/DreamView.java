@@ -65,6 +65,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         final float panX, panY;
         final Recording caption = Recording.create("caption");
         long startedAt;
+        long slot = -1;   // local build: your photos' 5-minute slot (Photos.slot), -1 for the picks
 
         Slide(Recs.Pick pick, Bitmap image, Bitmap frost, float lightCaption, float lightClock, int n) {
             this.pick = pick;
@@ -131,6 +132,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private Glass glass;
     private String glassFor = "";
     private long startedAt, firstAt, lastFrame, lastSky;
+    private boolean moving = true;
     private int w, h;
     private float k = 1;
     private long minute = -1;
@@ -293,7 +295,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         if (list.isEmpty()) return;
         Slide last = incoming != null ? incoming : current;
         int start = 0;
-        if (last != null) {
+        // Local build: your photos follow the home screen's schedule (the one on the wallpaper now, then the next slot).
+        boolean own = Photos.on(getContext());
+        long slot = own ? (last == null ? Photos.slot() : Math.max(last.slot + 1, Photos.slot())) : -1;
+        if (own) start = Photos.index(slot, list.size());
+        else if (last != null) {
             for (int i = 0; i < list.size(); i++) {
                 if (Recs.key(list.get(i)).equals(Recs.key(last.pick))) {
                     start = i + 1;
@@ -313,6 +319,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         if (last != null && Recs.key(pick).equals(Recs.key(last.pick))) {
             // Only one photo: the same one again, with a different motion.
             prepared = newSlide(pick, last.image, last.frost, last.lightCaption, last.lightClock);
+            prepared.slot = slot;
             return;
         }
         File file = pick.photo != null ? (pick.photo.exists() ? pick.photo : null) : recs.readyImage(pick);
@@ -324,6 +331,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         decoding = true;
         final int gen = generation;
         final Recs.Pick chosen = pick;
+        final long chosenSlot = slot;
         worker.execute(() -> {
             Bitmap[] images = null;
             float[] light = new float[2];
@@ -347,6 +355,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
                     return;
                 }
                 prepared = newSlide(chosen, ready[0], ready[1], light[0], light[1]);
+                prepared.slot = chosenSlot;
                 invalidate();
             });
         });
@@ -370,7 +379,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             prepareNext();
             return;
         }
-        if (incoming == null && prepared != null && up >= current.startedAt + SHOW_MS) {
+        boolean due = prepared != null && (prepared.slot >= 0 ? Photos.slot() >= prepared.slot
+                : up >= current.startedAt + SHOW_MS);
+        if (incoming == null && due) {
             incoming = prepared;
             prepared = null;
             incoming.startedAt = up;
@@ -403,6 +414,12 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     /** Photo position and scale now: zoom from 1 to 1.1 (or back) and a pan toward a corner, never showing an edge. */
     private void place(Slide s, long up, float[] out) {
+        if (s.slot >= 0) {
+            // Local build: your photos stand still, framed exactly like the home screen's background.
+            out[0] = out[1] = 0;
+            out[2] = (float) w / s.image.getWidth();
+            return;
+        }
         float u = Ui.clamp((up - s.startedAt) / (float) (SHOW_MS + FADE_MS));
         float f = s.zoomIn ? u : 1 - u;
         float z = 1 + ZOOM * f;
@@ -426,7 +443,9 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     @Override public void doFrame(long frameTimeNanos) {
         if (!running) return;
-        if (frameTimeNanos - lastFrame >= 45_000_000L) {
+        // Local build: a still photo needs no frames; then once a second (the clock and the next slot).
+        long gap = moving ? 45_000_000L : 1_000_000_000L;
+        if (frameTimeNanos - lastFrame >= gap) {
             lastFrame = frameTimeNanos;
             invalidate();
         }
@@ -454,7 +473,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         if (!glassFor.equals(clock)) buildGlass(clock);
 
         float first = current == null ? 0 : fadeIn(up - firstAt, FIRST_MS);
-        if (current == null || first < 1) {
+        // Local build: your photo is already on the wallpaper, so it shows at once; only the clock and weather fade in.
+        boolean still = current != null && current.slot >= 0;
+        float photoIn = still ? 1 : first;
+        moving = current == null || first < 1 || incoming != null || fallback || playingCorner != null || !still;
+        if (current == null || photoIn < 1) {
             if (fallback) drawFallback(canvas, up, current == null ? 1 : 1 - first);
             else canvas.drawRect(0, 0, w, h, black);
         }
@@ -463,7 +486,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
         place(current, up, placeA);
         float e = incoming == null ? 0 : fadeIn(up - incoming.startedAt, FADE_MS);
-        drawPhoto(canvas, current, placeA, first);
+        drawPhoto(canvas, current, placeA, photoIn);
         if (incoming != null) {
             place(incoming, up, placeB);
             drawPhoto(canvas, incoming, placeB, e);

@@ -126,6 +126,17 @@ final class Photos {
      * This hour's photo, ready to draw as the home screen's background, or null (off, or the first one still being
      * built). When the hour changes, the previous one stays until the new one is ready; then `ready` runs.
      */
+    /** Local build: the home screen and the screensaver change photos together, on the clock (:00, :05, :10…). */
+    static final long SLOT_MS = 300_000L;
+
+    static long slot() {
+        return System.currentTimeMillis() / SLOT_MS;
+    }
+
+    static int index(long slot, int size) {
+        return (int) (slot % size);
+    }
+
     static synchronized Backdrop backdrop(Context c, Runnable ready) {
         if (!on(c)) {
             backdrop = null;
@@ -133,8 +144,8 @@ final class Photos {
             return null;
         }
         List<File> list = files(c);
-        // Local build: a new photo every 10 minutes (upstream: every hour).
-        File want = list.get((int) ((System.currentTimeMillis() / 600_000L) % list.size()));
+        // Local build: a new photo every 5 minutes (upstream: every hour), the same one as the screensaver's.
+        File want = list.get(index(slot(), list.size()));
         if (!want.equals(built) && !want.equals(building)) {
             building = want;
             worker.execute(() -> {
