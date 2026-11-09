@@ -49,7 +49,13 @@ final class RemoteKeys {
      * Xiaomi TVs (models MiTV-M…; MiTV-MSSP3, MediaTek, Android TV 9 tested). Not the Mi Box or Mi TV Stick, the slowest
      * devices we run on, whose remotes have a Home button; Formovie's Xiaomi projectors have their own remote.
      */
-    static final boolean XIAOMI = is("Xiaomi") && !FORMOVIE && (Build.MODEL.startsWith("MiTV-M") || XIAOMI_PATCHWALL_ONLY);
+    /**
+     * Local build: the MiTV-AXSO0 (Android TV 9) remote's Mi button sends BUTTON_2, which Xiaomi's receiver turns into
+     * PatchWall. Only that button is ours (as the Mi button); its other buttons' codes were not checked.
+     */
+    static final boolean XIAOMI_MI_ONLY = is("Xiaomi") && Build.MODEL.equals("MiTV-AXSO0");
+    static final boolean XIAOMI = is("Xiaomi") && !FORMOVIE
+            && (Build.MODEL.startsWith("MiTV-M") || XIAOMI_PATCHWALL_ONLY || XIAOMI_MI_ONLY);
     /** Brands whose Netflix button is STEM_1, a global key (MediaTek): only that button is ours. */
     static final boolean STEM_NETFLIX = VESTEL || FORMOVIE;
     /**
@@ -86,6 +92,11 @@ final class RemoteKeys {
         if ((source & InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
                 || (source & InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) return false;
         int keyCode = e.getKeyCode() == KEY_YOUTUBE_TCL ? Prefs.KEY_YOUTUBE : e.getKeyCode();
+        if (XIAOMI_MI_ONLY) {
+            // Local build: this remote's Mi button is BUTTON_2; nothing else on it is ours.
+            if (keyCode != KeyEvent.KEYCODE_BUTTON_2) return false;
+            keyCode = Prefs.KEY_MI;
+        }
         // Sony sends BUTTON_9 for five app buttons (BUTTON_4 for Netflix, BUTTON_8 for Google Play): only the scan code
         // tells them apart.
         if (SONY && (keyCode == KeyEvent.KEYCODE_BUTTON_4 || keyCode == KeyEvent.KEYCODE_BUTTON_8
