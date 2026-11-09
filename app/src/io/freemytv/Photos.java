@@ -133,7 +133,8 @@ final class Photos {
             return null;
         }
         List<File> list = files(c);
-        File want = list.get((int) ((System.currentTimeMillis() / 3_600_000L) % list.size()));
+        // Local build: a new photo every 10 minutes (upstream: every hour).
+        File want = list.get((int) ((System.currentTimeMillis() / 600_000L) % list.size()));
         if (!want.equals(built) && !want.equals(building)) {
             building = want;
             worker.execute(() -> {
@@ -267,6 +268,15 @@ final class Photos {
         AppLog.w("photos: imported " + count + ", " + (have + count) + " in all");
         if (count > 0) Prefs.setPhotos(true);   // new photos show, even if they had been turned off
         return count;
+    }
+
+    /** Local addition (Bing): keeps only the newest `keep` imported photos (named by import time), deleting older ones. */
+    static synchronized void trim(Context c, int keep) {
+        File[] all = dir(c).listFiles((dir, name) -> name.endsWith(".jpg"));
+        if (all == null || all.length <= Math.max(keep, 0)) return;
+        Arrays.sort(all);
+        for (int i = 0; i < all.length - Math.max(keep, 0); i++) all[i].delete();
+        listedStamp = -1;
     }
 
     /** Deletes the imported photos and whatever is still waiting, half-sent ones included. */

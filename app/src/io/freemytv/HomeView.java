@@ -510,6 +510,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         data.refreshIfStale();
         recs.refreshIfStale();
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
+        Bing.refresh(getContext(), ownReady);          // local addition: Bing's photo of the day (every 12 h)
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
         playing.start();
@@ -1780,7 +1781,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void setDrawerItems(List<HomeApps.Item> list) {
         int inputs = 0;
-        while (inputs < list.size() && (list.get(inputs).kind == HomeApps.INPUT || list.get(inputs).kind == HomeApps.LIVE_TV)) inputs++;
+        while (inputs < list.size() && (list.get(inputs).kind == HomeApps.INPUT || list.get(inputs).kind == HomeApps.LIVE_TV
+                || list.get(inputs).kind == HomeApps.AIRPODS)) inputs++;
         boolean same = list.size() == drawerItems.size();
         for (int i = 0; same && i < list.size(); i++) {
             same = list.get(i).key.equals(drawerItems.get(i).key) && list.get(i).connected == drawerItems.get(i).connected;

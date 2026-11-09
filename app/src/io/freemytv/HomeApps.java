@@ -58,6 +58,10 @@ final class HomeApps {
     static final int APP = 0, LIVE_TV = 1, INPUT = 2, ALL_APPS = 3, SETTINGS = 4, ANDROID_SETTINGS = 5, DEVICE = 6;
     /** The "HDMI Inputs" button: opens the bottom drawer on the inputs (the home screen handles it). */
     static final int INPUTS = 7;
+    /** Local addition: connects the paired AirPods (Airpods). */
+    static final int AIRPODS = 8;
+    /** Local addition: the sleep timer's quick list (SleepButton). */
+    static final int SLEEP = 9;
     /** Image size of each card (16:9; on screen it shows up to ~330 px wide). */
     static final int TILE_W = 384, TILE_H = 216;
 
@@ -241,16 +245,20 @@ final class HomeApps {
 
     // MARK: - Top buttons (the round ones at the top right)
 
-    static final String TOP_LIVE = "live", TOP_INPUTS = "inputs", TOP_SETTINGS = "settings";
-    static final List<String> TOP_DEFAULT = Collections.unmodifiableList(java.util.Arrays.asList(TOP_LIVE, TOP_INPUTS, TOP_SETTINGS));
-    static final int MAX_TOP = TOP_DEFAULT.size();
+    static final String TOP_LIVE = "live", TOP_INPUTS = "inputs", TOP_SETTINGS = "settings", TOP_AIRPODS = "airpods",
+            TOP_SLEEP = "sleep";
+    /** Every button that can go at the top right (Settings > Top Buttons). */
+    static final List<String> TOP_ALL = Collections.unmodifiableList(java.util.Arrays.asList(TOP_AIRPODS, TOP_SLEEP, TOP_LIVE, TOP_INPUTS, TOP_SETTINGS));
+    /** Local build: Sleep Timer and Settings by default (AirPods lives in the bottom drawer). */
+    static final List<String> TOP_DEFAULT = Collections.unmodifiableList(java.util.Arrays.asList(TOP_SLEEP, TOP_SETTINGS));
+    static final int MAX_TOP = TOP_ALL.size();
 
-    /** The keys of the top buttons, in order (Settings > Top Buttons; by default Live TV, HDMI Inputs, Settings). */
+    /** The keys of the top buttons, in order (Settings > Top Buttons; by default AirPods, Settings). */
     static List<String> topButtonKeys() {
         List<String> saved = Prefs.topButtons();
         if (saved == null) return TOP_DEFAULT;
         List<String> keys = new ArrayList<>();
-        for (String key : saved) if (TOP_DEFAULT.contains(key) && !keys.contains(key)) keys.add(key);
+        for (String key : saved) if (TOP_ALL.contains(key) && !keys.contains(key)) keys.add(key);
         return keys;
     }
 
@@ -265,6 +273,8 @@ final class HomeApps {
         switch (key) {
             case TOP_LIVE: return action(LIVE_TV, TOP_LIVE, Ui.tr("light|Live TV"), "live_tv");
             case TOP_INPUTS: return action(INPUTS, TOP_INPUTS, Ui.tr("HDMI Inputs"), "hdmi");
+            case TOP_AIRPODS: return action(AIRPODS, TOP_AIRPODS, "AirPods", "bluetooth");
+            case TOP_SLEEP: return action(SLEEP, TOP_SLEEP, Ui.tr("Sleep Timer"), "bedtime");
             default: return action(SETTINGS, TOP_SETTINGS, Ui.tr("light|Settings"), "settings");
         }
     }
@@ -272,16 +282,14 @@ final class HomeApps {
     /** What can go in the top buttons, as {key, name}. */
     static List<String[]> topCandidates() {
         List<String[]> out = new ArrayList<>();
-        for (String key : TOP_DEFAULT) out.add(new String[] {key, topButton(key).label});
+        for (String key : TOP_ALL) out.add(new String[] {key, topButton(key).label});
         return out;
     }
 
-    /** Live TV, the HDMI inputs with a device sending a signal, and All Apps. */
+    /** AirPods (local build: in Live TV's place), the HDMI inputs with a device sending a signal, and All Apps. */
     static List<Item> shortcuts(Context c) {
         List<Item> items = new ArrayList<>();
-        if (liveTv(c) != null) {
-            items.add(shortcut(LIVE_TV, "live", Ui.tr("Live TV"), "tv"));
-        }
+        items.add(shortcut(AIRPODS, "airpods", "AirPods", "bluetooth"));
         items.addAll(inputs(c));
         items.add(shortcut(ALL_APPS, "all", Ui.tr("All Apps"), "apps"));
         return items;
@@ -353,10 +361,10 @@ final class HomeApps {
         return it;
     }
 
-    /** For the bottom drawer: live TV and every HDMI input (the ones with no device are shown dimmed). */
+    /** For the bottom drawer: AirPods (local build: in Live TV's place) and every HDMI input (the ones with no device are shown dimmed). */
     static List<Item> allInputs(Context c) {
         List<Item> items = new ArrayList<>();
-        if (liveTv(c) != null) items.add(shortcut(LIVE_TV, "live", Ui.tr("Live TV"), "tv"));
+        items.add(shortcut(AIRPODS, "airpods", "AirPods", "bluetooth"));
         items.addAll(inputs(c, true));
         return items;
     }
@@ -570,6 +578,14 @@ final class HomeApps {
             case ANDROID_SETTINGS:
                 intent = new Intent(Settings.ACTION_SETTINGS);
                 break;
+            case AIRPODS:
+                if (!(a instanceof Activity)) return false;
+                Airpods.press((Activity) a);
+                return true;
+            case SLEEP:
+                if (!(a instanceof Activity)) return false;
+                SleepButton.press((Activity) a);
+                return true;
             case DEVICE:
                 // A fresh task: else Back walks through whatever the maker's settings app had open before
                 intent = new Intent(it.intent).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);

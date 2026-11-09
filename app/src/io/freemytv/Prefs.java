@@ -205,7 +205,7 @@ final class Prefs {
     }
 
     /** The home screen's soft click when moving and opening. */
-    static boolean sounds() { return sp().getBoolean("sounds", true); }
+    static boolean sounds() { return sp().getBoolean("sounds", false); }   // local build: off by default
     static void setSounds(boolean on) { put("sounds", on); }
 
     /** OK on the screensaver opens the title it shows, in its app; any other key only closes it. Off: any key closes it. */

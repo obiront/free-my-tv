@@ -101,7 +101,8 @@ final class Backdrop {
             int[] nightGlass = darken(glass, 0.56f);
             if (own) {
                 int[] sharp = reduce(out, GW, GH, 1, 1);
-                int[] lightBg = ramp(sharp.clone(), 0.82f, 0.45f, true), nightBg = ramp(sharp, 0.76f, 0.5f, false);
+                // Local build: a lighter veil, so the photo shows in its own colors (upstream: 0.82→0.45 and 0.76→0.5).
+                int[] lightBg = ramp(sharp.clone(), 0.6f, 0f, true), nightBg = ramp(sharp, 0.65f, 0.15f, false);
                 out.recycle();
                 return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass, lightBg, nightBg, GW, GH);
             }

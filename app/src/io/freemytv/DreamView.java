@@ -190,6 +190,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         recs.refreshIfStale();
         recs.prefetchAll();
         Photos.importInbox(getContext(), () -> { if (running) prepareNext(); });
+        Bing.refresh(getContext(), () -> { if (running) prepareNext(); });
         prepareNext();
         handler.postDelayed(tick, 60_000);
         playing.start();
