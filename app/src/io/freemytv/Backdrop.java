@@ -65,8 +65,9 @@ final class Backdrop {
         this.lightGlass = lightGlass;
         this.nightFrost = night;
         this.nightGlass = nightGlass;
-        lightImage = lightBg == null ? null : Bitmap.createBitmap(lightBg, bw, bh, Bitmap.Config.ARGB_8888);
-        nightImage = nightBg == null ? null : Bitmap.createBitmap(nightBg, bw, bh, Bitmap.Config.ARGB_8888);
+        // In GPU memory, like `image`: a full-size background would otherwise hold 8 MB each in the process.
+        lightImage = lightBg == null ? null : gpu(Bitmap.createBitmap(lightBg, bw, bh, Bitmap.Config.ARGB_8888));
+        nightImage = nightBg == null ? null : gpu(Bitmap.createBitmap(nightBg, bw, bh, Bitmap.Config.ARGB_8888));
     }
 
     static Backdrop make(Bitmap src, boolean forLight) {
@@ -100,11 +101,13 @@ final class Backdrop {
             int[] night = darken(frost.clone(), 0.76f);
             int[] nightGlass = darken(glass, 0.56f);
             if (own) {
-                int[] sharp = reduce(out, GW, GH, 1, 1);
-                // Local build: a lighter veil, so the photo shows in its own colors (upstream: 0.82→0.45 and 0.76→0.5).
-                int[] lightBg = ramp(sharp.clone(), 0.6f, 0f, true), nightBg = ramp(sharp, 0.65f, 0.15f, false);
+                // Local build: the background at full screen size, unblurred (upstream: 480×270, blurred, scaled up 4×),
+                // and a lighter veil, so the photo shows sharp and in its own colors (upstream: 0.82→0.45 and 0.76→0.5).
+                int[] sharp = new int[W * H];
+                out.getPixels(sharp, 0, W, 0, 0, W, H);
                 out.recycle();
-                return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass, lightBg, nightBg, GW, GH);
+                int[] lightBg = ramp(sharp.clone(), W, H, 0.6f, 0f, true), nightBg = ramp(sharp, W, H, 0.65f, 0.15f, false);
+                return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass, lightBg, nightBg, W, H);
             }
             out.recycle();
             return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass);
@@ -217,15 +220,15 @@ final class Backdrop {
         return px;
     }
 
-    /** Whitens (or darkens) by `left` up to 45% of the width, easing to `right` by 70% (a GW × GH image). */
-    private static int[] ramp(int[] px, float left, float right, boolean light) {
-        int[] col = new int[GH];
-        for (int x = 0; x < GW; x++) {
-            float t = Math.max(0, Math.min(1, (x / (float) GW - 0.45f) / 0.25f));
+    /** Whitens (or darkens) by `left` up to 45% of the width, easing to `right` by 70% (a w × h image). */
+    private static int[] ramp(int[] px, int w, int h, float left, float right, boolean light) {
+        int[] col = new int[h];
+        for (int x = 0; x < w; x++) {
+            float t = Math.max(0, Math.min(1, (x / (float) w - 0.45f) / 0.25f));
             float a = left + (right - left) * t * t * (3 - 2 * t);
-            for (int y = 0; y < GH; y++) col[y] = px[y * GW + x];
+            for (int y = 0; y < h; y++) col[y] = px[y * w + x];
             if (light) whiten(col, a); else darken(col, a);
-            for (int y = 0; y < GH; y++) px[y * GW + x] = col[y];
+            for (int y = 0; y < h; y++) px[y * w + x] = col[y];
         }
         return px;
     }
