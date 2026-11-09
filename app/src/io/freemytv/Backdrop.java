@@ -102,11 +102,15 @@ final class Backdrop {
             int[] nightGlass = darken(glass, 0.56f);
             if (own) {
                 // Local build: the background at full screen size, unblurred (upstream: 480×270, blurred, scaled up 4×),
-                // and a lighter veil, so the photo shows sharp and in its own colors (upstream: 0.82→0.45 and 0.76→0.5).
+                // and no veil over the whole photo (upstream: 0.82→0.45 by day, 0.76→0.5 at night): only a soft shade
+                // behind the date, clock and weather, as strong as the photo there needs, like the screensaver's corner.
+                float lum = luminance(out, 0.02f, 0.24f, 0.36f, 0.62f);
                 int[] sharp = new int[W * H];
                 out.getPixels(sharp, 0, W, 0, 0, W, H);
                 out.recycle();
-                int[] lightBg = ramp(sharp.clone(), W, H, 0.6f, 0f, true), nightBg = ramp(sharp, W, H, 0.65f, 0.15f, false);
+                float day = Math.max(0.2f, Math.min(0.6f, 0.15f + (0.78f - lum) * 0.9f));    // dark text by day: lighten
+                float dusk = Math.max(0.25f, Math.min(0.6f, 0.2f + (lum - 0.12f) * 1.2f));  // white text at night: darken
+                int[] lightBg = shade(sharp.clone(), W, H, day, true), nightBg = shade(sharp, W, H, dusk, false);
                 return new Backdrop(null, frost, null, wide, light, lightGlass, night, nightGlass, lightBg, nightBg, W, H);
             }
             out.recycle();
@@ -220,15 +224,26 @@ final class Backdrop {
         return px;
     }
 
-    /** Whitens (or darkens) by `left` up to 45% of the width, easing to `right` by 70% (a w × h image). */
-    private static int[] ramp(int[] px, int w, int h, float left, float right, boolean light) {
-        int[] col = new int[h];
-        for (int x = 0; x < w; x++) {
-            float t = Math.max(0, Math.min(1, (x / (float) w - 0.45f) / 0.25f));
-            float a = left + (right - left) * t * t * (3 - 2 * t);
-            for (int y = 0; y < h; y++) col[y] = px[y * w + x];
-            if (light) whiten(col, a); else darken(col, a);
-            for (int y = 0; y < h; y++) px[y * w + x] = col[y];
+    /**
+     * Local build: whitens (or darkens) by up to `amount` in a soft oval behind the home screen's date, clock and
+     * weather (left, a little above the middle), fading to nothing well before the photo's center.
+     */
+    private static int[] shade(int[] px, int w, int h, float amount, boolean light) {
+        float cx = w * 0.17f, cy = h * 0.43f, rx = w * 0.44f, ry = h * 0.38f;
+        int[] one = new int[1];
+        for (int y = 0; y < h; y++) {
+            float dy = (y - cy) / ry;
+            for (int x = 0; x < w; x++) {
+                float dx = (x - cx) / rx;
+                float d = (float) Math.sqrt(dx * dx + dy * dy);
+                if (d >= 1) continue;
+                float t = Math.max(0, Math.min(1, (d - 0.45f) / 0.55f));
+                float a = amount * (1 - t * t * (3 - 2 * t));
+                if (a < 0.004f) continue;
+                one[0] = px[y * w + x];
+                if (light) whiten(one, a); else darken(one, a);
+                px[y * w + x] = one[0];
+            }
         }
         return px;
     }
