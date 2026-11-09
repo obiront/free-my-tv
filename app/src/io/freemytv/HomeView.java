@@ -518,7 +518,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         hiddenNow.retainAll(Prefs.watchHidden());   // Home Settings may have shown the hidden ones again
         if (!again) reload();
         updatePalette();
+        // Local build: a photo built while hidden (under the screensaver) shows at once, without a cross-fade.
+        instantBg = true;
         updatePicks();
+        instantBg = false;
         updateSleep();      // a timer just set in Settings shows at once, not at the next tick
         if (allAppsOnResume) {
             allAppsOnResume = false;
@@ -1016,9 +1019,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** Swaps the background with a cross-fade (from one image to another, from the gradient to an image, or back). */
+    private boolean instantBg;
+
     private void showBackdrop(Backdrop b) {
         if (b == bgTo) return;
         long up = SystemClock.uptimeMillis();
+        if (instantBg) {
+            // Already finished: the first frame shows `b` alone (tickBackgroundFade settles the glass).
+            bgFrom = null;
+            bgTo = b;
+            bgFadeAt = up - (long) FADE_MS - 1;
+            nightPair = false;
+            return;
+        }
         // In the middle of another swap, start from whichever is more visible.
         if (bgFadeAt == 0 || fadeEase(bgFadeAt, up) >= 0.5f) bgFrom = bgTo;
         bgTo = b;

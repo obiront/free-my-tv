@@ -12,6 +12,7 @@ import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RuntimeShader;
 import android.graphics.Shader;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -376,6 +377,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             current.startedAt = up;
             firstAt = up;
             bindPhotos();
+            warmHome();
             prepareNext();
             return;
         }
@@ -386,6 +388,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             prepared = null;
             incoming.startedAt = up;
             bindPhotos();
+            warmHome();
             return;
         }
         if (incoming != null && up >= incoming.startedAt + FADE_MS) {
@@ -403,6 +406,18 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             }
             prepareNext();
         }
+    }
+
+    /**
+     * Local build: the home screen, hidden under the screensaver, builds the same photo in the background now, so
+     * leaving the screensaver shows it at once (no old photo first). Only where both share the :home process
+     * (Android 8 to 10, 13 and newer; on 11 to 12L the screensaver runs alone, in the main process).
+     */
+    private void warmHome() {
+        Slide s = incoming != null ? incoming : current;
+        if (s == null || s.slot < 0) return;
+        if (Build.VERSION.SDK_INT >= 30 && Build.VERSION.SDK_INT < 33) return;
+        Photos.backdrop(getContext(), () -> { });
     }
 
     /** The photos the clock's glass shows (the current one and, during a crossfade, the incoming one). */
