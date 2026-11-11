@@ -84,6 +84,35 @@ final class RemoteKeys {
         return maker.equalsIgnoreCase(Build.MANUFACTURER) || maker.equalsIgnoreCase(Build.BRAND);
     }
 
+    /**
+     * Local build: a key value "input:<TV input id>" makes the key a two-way switch: from anywhere (home screen, an app,
+     * the screensaver) it opens that HDMI input; from the input, it goes back to where you were.
+     */
+    static final String INPUT_TOGGLE = "input:";
+    /** The package in front, and the last one in front that wasn't the input's player ("home" for our home screen). */
+    private static volatile String frontPkg = "", backTo = "home";
+    private static volatile String inputPlayer;
+
+    /** Local build: the window in front changed (RemoteKeyService). */
+    static void front(String pkg, CharSequence cls) {
+        if (cls == null) return;
+        String c = cls.toString();
+        // Dialogs, toasts, the screensaver and the system UI don't change what is in front underneath.
+        if (c.startsWith("android.") || pkg.equals("com.android.systemui") || pkg.equals("android")) return;
+        if (pkg.equals(HomeMode.PKG) && !c.equals(HomeActivity.class.getName())) return;
+        frontPkg = pkg;
+        if (!pkg.equals(inputPlayer)) backTo = pkg.equals(HomeMode.PKG) ? "home" : pkg;
+    }
+
+    /** The app that shows HDMI inputs (MediaTek's tvcenter), found once. */
+    private static String inputPlayer(Context c, Intent input) {
+        if (inputPlayer == null) {
+            android.content.pm.ResolveInfo r = c.getPackageManager().resolveActivity(input, 0);
+            inputPlayer = r != null && r.activityInfo != null ? r.activityInfo.packageName : "";
+        }
+        return inputPlayer;
+    }
+
     /** Opens the app for this key on its first press. True if the key is ours and in use (it is then consumed). */
     static boolean onKey(Context c, KeyEvent e) {
         if (!supported()) return false;
@@ -119,6 +148,32 @@ final class RemoteKeys {
             Intent intent = pkg.equals(HomeMode.PKG) || pkg.equals(Prefs.ALL_APPS)
                     ? new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
                     : launchIntent(c.getPackageManager(), pkg);
+            if (pkg.startsWith(INPUT_TOGGLE)) {
+                // Local build: on the input, back to where you were; anywhere else, the input.
+                String inputId = pkg.substring(INPUT_TOGGLE.length());
+                Intent input = new Intent(Intent.ACTION_VIEW, android.media.tv.TvContract.buildChannelUriForPassthroughInput(inputId))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                Intent target;
+                if (frontPkg.equals(inputPlayer(c, input))) {
+                    String back = backTo;
+                    Intent app = back.equals("home") ? null : launchIntent(c.getPackageManager(), back);
+                    target = app != null ? app : new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+                    target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    AppLog.w("remote key " + e.getKeyCode() + " -> back to " + back);
+                } else {
+                    target = input;
+                    AppLog.w("remote key " + e.getKeyCode() + " -> input");
+                }
+                final Intent go = target;
+                Screensaver.leaveThen(c, () -> {
+                    try {
+                        c.startActivity(go);
+                    } catch (RuntimeException ex) {
+                        AppLog.w("remote key: " + ex.getMessage());
+                    }
+                });
+                return true;
+            }
             if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
             AppLog.w("remote key " + e.getKeyCode() + " -> " + pkg + (intent == null ? " (not installed)" : ""));
             if (intent == null) return true;

@@ -13,7 +13,13 @@ public class RemoteKeyService extends AccessibilityService {
         return RemoteKeys.onKey(this, event);
     }
 
-    @Override public void onAccessibilityEvent(AccessibilityEvent event) {}
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) {
+        // Local build: what is in front (for the Mi button's HDMI toggle). Only window changes come here, and only a
+        // reference is kept.
+        if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && event.getPackageName() != null) {
+            RemoteKeys.front(String.valueOf(event.getPackageName()), event.getClassName());
+        }
+    }
 
     @Override public void onInterrupt() {}
 }

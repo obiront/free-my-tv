@@ -44,16 +44,33 @@ public class Screensaver extends DreamService {
         }, null, 0, null, null);
     }
 
+    private static final String EXTRA_THEN = "then";
+
+    /**
+     * Local build: closes a running screensaver gently (its clock fades out), then `then` runs; without a screensaver,
+     * `then` runs at once. On the main thread either way.
+     */
+    static void leaveThen(Context c, Runnable then) {
+        Intent ask = new Intent(ACTION_LEAVE).setPackage(c.getPackageName()).putExtra(EXTRA_THEN, true);
+        c.sendOrderedBroadcast(ask, null, new BroadcastReceiver() {
+            @Override public void onReceive(Context context, Intent intent) {
+                if (getResultCode() != 1) then.run();
+                else new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(then, DreamView.LEAVE_MS + 50);
+            }
+        }, null, 0, null, null);
+    }
+
     private final BroadcastReceiver leave = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
             setResultCode(1);
             if (closing) return;
             closing = true;
             if (view != null) view.leave();
+            boolean callerOpens = intent.getBooleanExtra(EXTRA_THEN, false);
             handler.postDelayed(() -> {
                 // Over the home screen, closing is enough (opening it again would reset and slide its focus);
-                // over another app, the home screen opens, as the Mi button does.
-                if (!HomeActivity.shown) {
+                // over another app, the home screen opens, as the Mi button does (unless the caller opens something).
+                if (!callerOpens && !HomeActivity.shown) {
                     try {
                         startActivity(new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
                                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));

@@ -1097,6 +1097,12 @@ public class SettingsActivity extends Activity {
             if (RemoteKeys.XIAOMI) {
                 appPkgs.add(HomeMode.PKG);
                 appLabels.add("Free My TV");
+                // Local build: a two-way switch to an HDMI input (a game console) and back to where you were.
+                for (HomeApps.Item it : HomeApps.allInputs(getContext())) {
+                    if (it.kind != HomeApps.INPUT || it.inputId == null) continue;
+                    appPkgs.add(RemoteKeys.INPUT_TOGGLE + it.inputId);
+                    appLabels.add(it.label + " ⇄");
+                }
             }
             if (RemoteKeys.HISENSE) {
                 appPkgs.add(Prefs.ALL_APPS);
