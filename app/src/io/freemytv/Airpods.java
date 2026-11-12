@@ -207,10 +207,25 @@ final class Airpods {
 
     private static void setPriority(Object proxy, BluetoothDevice dev, int priority) {
         try {
-            Method m = proxy.getClass().getMethod("setPriority", BluetoothDevice.class, int.class);
-            m.invoke(proxy, dev, priority);
+            Method m = hidden(proxy.getClass(), "setPriority", BluetoothDevice.class, int.class);
+            Object ok = m.invoke(proxy, dev, priority);
+            AppLog.w("AirPods: priority " + priority + " -> " + ok);
         } catch (Throwable t) {
             AppLog.w("AirPods: setPriority failed: " + t);
+        }
+    }
+
+    /**
+     * A hidden framework method. setPriority is on Android 9's dark greylist, so a plain getMethod from the app throws
+     * NoSuchMethodException; looked up through reflection on Class itself, the caller is the boot class path and
+     * the check lets it through (works up to Android 10).
+     */
+    private static Method hidden(Class<?> c, String name, Class<?>... params) throws Exception {
+        try {
+            Method get = Class.class.getDeclaredMethod("getMethod", String.class, Class[].class);
+            return (Method) get.invoke(c, name, params);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            return c.getMethod(name, params);
         }
     }
 
@@ -225,7 +240,7 @@ final class Airpods {
     /** A hidden BluetoothA2dp method taking the device (connect, disconnect, setActiveDevice). */
     private static boolean call(BluetoothA2dp a2dp, String name, BluetoothDevice dev) {
         try {
-            Method m = BluetoothA2dp.class.getMethod(name, BluetoothDevice.class);
+            Method m = hidden(BluetoothA2dp.class, name, BluetoothDevice.class);
             Object r = m.invoke(a2dp, dev);
             return !(r instanceof Boolean) || (Boolean) r;
         } catch (Throwable t) {
