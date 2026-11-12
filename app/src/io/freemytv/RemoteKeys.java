@@ -89,14 +89,30 @@ final class RemoteKeys {
      * the screensaver) it opens that HDMI input; from the input, it goes back to where you were.
      */
     static final String INPUT_TOGGLE = "input:";
+    private static final String PATCHWALL = "com.mitv.tvhome.atv";
+    /**
+     * Local build: true while the key filter is paused (RemoteKeyService, for 5 s after the volume changes). With a key
+     * filter on, Android stops repeating held keys, so holding Vol+/− moved one step only; paused, it repeats again.
+     * The same workaround as Projectivy's: press once, then hold.
+     */
+    static volatile boolean paused;
     /** The package in front, and the last one in front that wasn't the input's player ("home" for our home screen). */
     private static volatile String frontPkg = "", backTo = "home";
     private static volatile String inputPlayer;
 
     /** Local build: the window in front changed (RemoteKeyService). */
-    static void front(String pkg, CharSequence cls) {
+    static void front(Context ctx, String pkg, CharSequence cls) {
         if (cls == null) return;
         String c = cls.toString();
+        if (pkg.equals(PATCHWALL)) {
+            // While the key filter is paused for the volume, the Mi button reaches Xiaomi, which opens PatchWall:
+            // do what the Mi button is set to instead (PatchWall itself never counts as "where you were").
+            if (paused && XIAOMI && !XIAOMI_PATCHWALL_ONLY) {
+                String mi = Prefs.keyApp(Prefs.KEY_MI);
+                if (!mi.isEmpty()) open(ctx, mi, -1);
+            }
+            return;
+        }
         // Dialogs, toasts, the screensaver and the system UI don't change what is in front underneath.
         if (c.startsWith("android.") || pkg.equals("com.android.systemui") || pkg.equals("android")) return;
         if (pkg.equals(HomeMode.PKG) && !c.equals(HomeActivity.class.getName())) return;
@@ -143,50 +159,55 @@ final class RemoteKeys {
             lastKey = keyCode;
             lastDown = e.getEventTime();
             if (burst) return true;
-            // Our own package means the home screen in use (Xiaomi's Mi button): ours, or the TV's own after the
-            // watchdog handed it back. Not the settings app our launcher icon opens.
-            Intent intent = pkg.equals(HomeMode.PKG) || pkg.equals(Prefs.ALL_APPS)
-                    ? new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                    : launchIntent(c.getPackageManager(), pkg);
-            if (pkg.startsWith(INPUT_TOGGLE)) {
-                // Local build: on the input, back to where you were; anywhere else, the input.
-                String inputId = pkg.substring(INPUT_TOGGLE.length());
-                Intent input = new Intent(Intent.ACTION_VIEW, android.media.tv.TvContract.buildChannelUriForPassthroughInput(inputId))
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                Intent target;
-                if (frontPkg.equals(inputPlayer(c, input))) {
-                    String back = backTo;
-                    Intent app = back.equals("home") ? null : launchIntent(c.getPackageManager(), back);
-                    target = app != null ? app : new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-                    target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    AppLog.w("remote key " + e.getKeyCode() + " -> back to " + back);
-                } else {
-                    target = input;
-                    AppLog.w("remote key " + e.getKeyCode() + " -> input");
-                }
-                final Intent go = target;
-                Screensaver.leaveThen(c, () -> {
-                    try {
-                        c.startActivity(go);
-                    } catch (RuntimeException ex) {
-                        AppLog.w("remote key: " + ex.getMessage());
-                    }
-                });
-                return true;
-            }
-            if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
-            AppLog.w("remote key " + e.getKeyCode() + " -> " + pkg + (intent == null ? " (not installed)" : ""));
-            if (intent == null) return true;
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            if (pkg.equals(HomeMode.PKG)) {
-                // Local build: over the screensaver, the Mi button lets it fade out first (it then opens home).
-                final Intent home = intent;
-                Screensaver.leaveOr(c, () -> c.startActivity(home));
-            } else {
-                c.startActivity(intent);
-            }
+            open(c, pkg, e.getKeyCode());
         }
         return true;
+    }
+
+    /** What the key's setting says: an app, our home screen (over the screensaver, gently) or the HDMI switch. */
+    private static void open(Context c, String pkg, int logKey) {
+        // Our own package means the home screen in use (Xiaomi's Mi button): ours, or the TV's own after the
+        // watchdog handed it back. Not the settings app our launcher icon opens.
+        Intent intent = pkg.equals(HomeMode.PKG) || pkg.equals(Prefs.ALL_APPS)
+                ? new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+                : launchIntent(c.getPackageManager(), pkg);
+        if (pkg.startsWith(INPUT_TOGGLE)) {
+            // Local build: on the input, back to where you were; anywhere else, the input.
+            String inputId = pkg.substring(INPUT_TOGGLE.length());
+            Intent input = new Intent(Intent.ACTION_VIEW, android.media.tv.TvContract.buildChannelUriForPassthroughInput(inputId))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            Intent target;
+            if (frontPkg.equals(inputPlayer(c, input))) {
+                String back = backTo;
+                Intent app = back.equals("home") ? null : launchIntent(c.getPackageManager(), back);
+                target = app != null ? app : new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+                target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                AppLog.w("remote key " + logKey + " -> back to " + back);
+            } else {
+                target = input;
+                AppLog.w("remote key " + logKey + " -> input");
+            }
+            final Intent go = target;
+            Screensaver.leaveThen(c, () -> {
+                try {
+                    c.startActivity(go);
+                } catch (RuntimeException ex) {
+                    AppLog.w("remote key: " + ex.getMessage());
+                }
+            });
+            return;
+        }
+        if (pkg.equals(Prefs.ALL_APPS)) intent.putExtra(HomeActivity.EXTRA_ALL_APPS, true);
+        AppLog.w("remote key " + logKey + " -> " + pkg + (intent == null ? " (not installed)" : ""));
+        if (intent == null) return;
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        if (pkg.equals(HomeMode.PKG)) {
+            // Local build: over the screensaver, the Mi button lets it fade out first (it then opens home).
+            final Intent home = intent;
+            Screensaver.leaveOr(c, () -> c.startActivity(home));
+        } else {
+            c.startActivity(intent);
+        }
     }
 
     /** The app's TV launcher, or its plain one (kept here, not in HomeApps, so the key process stays small). */

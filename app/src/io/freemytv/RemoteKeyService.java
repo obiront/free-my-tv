@@ -17,9 +17,55 @@ public class RemoteKeyService extends AccessibilityService {
         // Local build: what is in front (for the Mi button's HDMI toggle). Only window changes come here, and only a
         // reference is kept.
         if (event.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && event.getPackageName() != null) {
-            RemoteKeys.front(String.valueOf(event.getPackageName()), event.getClassName());
+            RemoteKeys.front(this, String.valueOf(event.getPackageName()), event.getClassName());
         }
     }
 
     @Override public void onInterrupt() {}
+
+    // Local build: the key filter pauses for a few seconds whenever the volume changes, so a held Vol+/− repeats
+    // (see RemoteKeys.paused).
+    private static final long PAUSE_MS = 5_000;
+    private final android.os.Handler handler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private final Runnable resume = () -> filterKeys(true);
+    private final android.content.BroadcastReceiver volume = new android.content.BroadcastReceiver() {
+        @Override public void onReceive(android.content.Context c, android.content.Intent i) {
+            filterKeys(false);
+            handler.removeCallbacks(resume);
+            handler.postDelayed(resume, PAUSE_MS);
+        }
+    };
+    private boolean listening;
+
+    @Override protected void onServiceConnected() {
+        super.onServiceConnected();
+        if (!listening && RemoteKeys.XIAOMI) {
+            registerReceiver(volume, new android.content.IntentFilter("android.media.VOLUME_CHANGED_ACTION"));
+            listening = true;
+        }
+    }
+
+    @Override public void onDestroy() {
+        handler.removeCallbacks(resume);
+        if (listening) {
+            try {
+                unregisterReceiver(volume);
+            } catch (IllegalArgumentException ignored) {
+            }
+            listening = false;
+        }
+        super.onDestroy();
+    }
+
+    private void filterKeys(boolean on) {
+        android.accessibilityservice.AccessibilityServiceInfo info = getServiceInfo();
+        if (info == null) return;
+        boolean now = (info.flags & android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0;
+        RemoteKeys.paused = !on;
+        if (now == on) return;
+        if (on) info.flags |= android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+        else info.flags &= ~android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+        setServiceInfo(info);
+        AppLog.w("remote keys " + (on ? "filtered again" : "paused for the volume"));
+    }
 }

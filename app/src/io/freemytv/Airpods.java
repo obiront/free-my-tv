@@ -96,6 +96,7 @@ final class Airpods {
                     .show();
             return;
         }
+        allow(a, bt, a2dp, dev, true);
         if (!call(a2dp, "connect", dev)) {
             done(bt, a2dp);
             toast(a, "Телевізор не дозволяє підключити напряму. Відкриваю Bluetooth.");
@@ -122,6 +123,7 @@ final class Airpods {
         bt.getProfileProxy(a.getApplicationContext(), new BluetoothProfile.ServiceListener() {
             @Override public void onServiceConnected(int profile, BluetoothProfile proxy) {
                 final BluetoothA2dp a2dp = (BluetoothA2dp) proxy;
+                allow(a, bt, a2dp, dev, true);
                 final long until = System.currentTimeMillis() + RETRY_FOR;
                 MAIN.post(new Runnable() {
                     @Override public void run() {
@@ -130,6 +132,7 @@ final class Airpods {
                             return;
                         }
                         if (System.currentTimeMillis() > until) {
+                            allow(a, bt, a2dp, dev, false);
                             done(bt, a2dp);
                             toast(a, "Не вдалося підключити AirPods. Відкрийте кейс біля телевізора й спробуйте ще раз.");
                             return;
@@ -162,6 +165,7 @@ final class Airpods {
 
     private static void connected(Activity a, BluetoothAdapter bt, BluetoothA2dp a2dp, BluetoothDevice dev) {
         call(a2dp, "setActiveDevice", dev);   // the sound goes to them, not the TV's speakers
+        allow(a, bt, a2dp, dev, false);       // connected now; they don't come back on their own later
         done(bt, a2dp);
         toast(a, "AirPods підключено");
     }
@@ -170,6 +174,7 @@ final class Airpods {
         bt.getProfileProxy(a.getApplicationContext(), new BluetoothProfile.ServiceListener() {
             @Override public void onServiceConnected(int profile, BluetoothProfile proxy) {
                 BluetoothA2dp a2dp = (BluetoothA2dp) proxy;
+                allow(a, bt, a2dp, dev, false);
                 boolean ok = call(a2dp, "disconnect", dev);
                 bt.closeProfileProxy(BluetoothProfile.A2DP, a2dp);
                 MAIN.post(() -> toast(a, ok ? "AirPods відключено" : "Не вдалося відключити AirPods"));
@@ -177,6 +182,36 @@ final class Airpods {
 
             @Override public void onServiceDisconnected(int profile) {}
         }, BluetoothProfile.A2DP);
+    }
+
+    /**
+     * Local build: whether Android may connect them on its own. Off (priority 0) except while the button connects them,
+     * so taking them out of the case near the TV no longer pulls them over: only the button does. Android 9 refuses
+     * connect() at priority 0, hence on (100) just before. A2DP and, where the TV uses it, the headset profile.
+     */
+    private static void allow(Activity a, BluetoothAdapter bt, BluetoothA2dp a2dp, BluetoothDevice dev, boolean on) {
+        int priority = on ? 100 : 0;
+        setPriority(a2dp, dev, priority);
+        try {
+            bt.getProfileProxy(a.getApplicationContext(), new BluetoothProfile.ServiceListener() {
+                @Override public void onServiceConnected(int profile, BluetoothProfile proxy) {
+                    setPriority(proxy, dev, priority);
+                    bt.closeProfileProxy(BluetoothProfile.HEADSET, proxy);
+                }
+
+                @Override public void onServiceDisconnected(int profile) {}
+            }, BluetoothProfile.HEADSET);
+        } catch (RuntimeException ignored) {
+        }
+    }
+
+    private static void setPriority(Object proxy, BluetoothDevice dev, int priority) {
+        try {
+            Method m = proxy.getClass().getMethod("setPriority", BluetoothDevice.class, int.class);
+            m.invoke(proxy, dev, priority);
+        } catch (Throwable t) {
+            AppLog.w("AirPods: setPriority failed: " + t);
+        }
     }
 
     private static int state(BluetoothA2dp a2dp, BluetoothDevice dev) {
